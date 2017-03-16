@@ -1,6 +1,9 @@
 var elasticsearch = require('elasticsearch');
 var express = require('express');
 var fs = require('fs');
+var request = require('request');
+var parseString = require('xml2js').parseString;
+var AWS = require('aws-sdk');
 
 var client = new elasticsearch.Client({
   host: 'search-universal-data-wv5jdu5cdmklgnr3b3gawbrfuu.us-west-2.es.amazonaws.com',
