@@ -1,9 +1,8 @@
 var elasticsearch = require('elasticsearch');
+var uuid = require('uuid/v1');
 var express = require('express');
-var fs = require('fs');
 var request = require('request');
 var parseString = require('xml2js').parseString;
-var AWS = require('aws-sdk');
 
 var client = new elasticsearch.Client({
   host: 'search-universal-data-wv5jdu5cdmklgnr3b3gawbrfuu.us-west-2.es.amazonaws.com',
@@ -21,30 +20,46 @@ client.ping({
   }
 });
 
-function loadDataSet() {
-  fs.readFile("dataset/data.json", {encoding: 'utf-8'}, function(err,data) {
-    if (!err) {      
-      var items = JSON.parse(data);
-      for(var i = 0; i < 1000; i++) {
-        console.log(items[i].id);
-        client.create({
-          index: '499-books',
-          type: 'book',
-          id: items[i].id,
-          body: items[i]
-        }, function (error, response) {
-          console.log("put item successfully.")
-        })
-      }
-    } else{
-        console.log(err);
-    }
-  });
+function fetchWaitingTimes() {
+    request('http://www.universalstudioshollywood.com/waittimes/?type=all&site=USH', function (error, response, body) {
+        if (!error && response.statusCode == 200) {
+            var upload = [];
+            parseString(body, function (err, result) {
+                var items = result.rss.channel[0].item;
+                for (var i = 0; i < items.length; ++i) {
+                    upload.push({
+                       'timeStamp': Date.now(),
+                       'rideName': items[i].title[0],
+                       'description': items[i].description[0]
+                    });
+                }
+            });
+            loadDataSet(upload);
+        } else {
+    console.log(error);
+  }
+    })
 }
+
+var loadDataSet = function(items) {
+    for (var i = 0; i < items.length; ++i) {
+        client.create({
+            index: 'data',
+            type: 'waitTime',
+            id: uuid(),
+            body: items[i]
+        }, function (error, response) {
+    if(error) {
+      console.log(error);
+    }
+    console.log("Data Uploaded")
+        })
+    }
+};
 
 function searchTest(searchterm, callback) {
   client.search({
-    index: '499-books',  
+    index: 'data',  
     body: {
       "query": {
         "bool": {
@@ -53,9 +68,6 @@ function searchTest(searchterm, callback) {
               "keywords": searchterm
             }
           },
-          "filter": {
-            "range": { "year": { "gte": 2011, "lte": 2013 }}
-          }
         }
       }
     }
@@ -69,17 +81,24 @@ function searchTest(searchterm, callback) {
 
 var app = express()
 
-app.use(function(req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-  next();
-});
-
 app.get('/search', function (req, res) {  
   searchTest(req.query.q, function(result) {
     res.send(result);
   });
 })
+
+var wait = 100000
+var waitTimer = function () {
+    setInterval(function () {
+        fetchWaitingTimes();
+    }, wait)
+};
+
+app.use(function(req, res, next) {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  next();
+});
 
 app.listen(3000, function () {
   console.log('Example app listening on port 3000!')
